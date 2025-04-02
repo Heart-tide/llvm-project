@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/IPO/SampleProfileProbe.h"
+#include "llvm/Transforms/IPO/SampleProfileProbeSelector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/EHUtils.h"
@@ -50,6 +51,10 @@ static cl::list<std::string> VerifyPseudoProbeFuncList(
 static cl::opt<bool>
     UpdatePseudoProbe("update-pseudo-probe", cl::init(true), cl::Hidden,
                       cl::desc("Update pseudo probe distribution factor"));
+
+static cl::opt<bool>
+    UseSelectivePseudoProbe("use-selective-pseudo-probe", cl::init(false), cl::Hidden,
+                      cl::desc("Use selective pseudo probe"));
 
 static uint64_t getCallStackHash(const DILocation *DIL) {
   uint64_t Hash = 0;
@@ -208,6 +213,9 @@ void SampleProfileProber::computeBlocksToIgnore(
   // no additional callsite in the normal dests, so we don't ignore the
   // callsites.
   findInvokeNormalDests(BlocksToIgnore);
+
+  if (UseSelectivePseudoProbe)
+    calculateSelectiveProbeIgnoreIds(BlocksToIgnore);
 }
 
 // Unreachable blocks and calls are always cold, ignore them.
@@ -239,6 +247,19 @@ void SampleProfileProber::findInvokeNormalDests(
         } else
           break;
       }
+    }
+  }
+}
+
+void SampleProfileProber::calculateSelectiveProbeIgnoreIds(
+    DenseSet<BasicBlock *> &BlocksToIgnore) {
+  ProbeSelectorMST SelectorMST(F);
+  DenseSet<BasicBlock*> BBsToInstrument;
+  SelectorMST.getProbeBBs(BBsToInstrument);
+  for (auto &It: *F) {
+    BasicBlock* BB = &It;
+    if (!BBsToInstrument.contains(BB)) {
+      BlocksToIgnore.insert(BB);
     }
   }
 }

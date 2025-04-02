@@ -84,6 +84,7 @@ private:
   uint32_t getCallsiteId(const Instruction *Call) const;
   void findUnreachableBlocks(DenseSet<BasicBlock *> &BlocksToIgnore);
   void findInvokeNormalDests(DenseSet<BasicBlock *> &InvokeNormalDests);
+  void calculateSelectiveProbeIgnoreIds(DenseSet<BasicBlock *> &BlocksToIgnore);
   void computeBlocksToIgnore(DenseSet<BasicBlock *> &BlocksToIgnore,
                              DenseSet<BasicBlock *> &BlocksAndCallsToIgnore);
   const Instruction *
