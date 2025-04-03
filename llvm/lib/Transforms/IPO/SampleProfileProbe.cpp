@@ -253,9 +253,9 @@ void SampleProfileProber::findInvokeNormalDests(
 
 void SampleProfileProber::calculateSelectiveProbeIgnoreIds(
     DenseSet<BasicBlock *> &BlocksToIgnore) {
-  ProbeSelectorMST SelectorMST(F);
+  ProbeSelectorST SelectorST(F);
   DenseSet<BasicBlock*> BBsToInstrument;
-  SelectorMST.getProbeBBs(BBsToInstrument);
+  SelectorST.getProbeBBs(BBsToInstrument);
   for (auto &It: *F) {
     BasicBlock* BB = &It;
     if (!BBsToInstrument.contains(BB)) {

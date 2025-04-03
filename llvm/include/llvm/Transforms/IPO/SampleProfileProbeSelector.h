@@ -18,9 +18,71 @@
 
 namespace llvm {
 
-template<class Edge, class BBInfo>
-class ProbeCFGMST: CFGMST<Edge, BBInfo> {
+class ProbeCFGST {
+public:
+  struct Edge {
+    BasicBlock* SrcBB;
+    BasicBlock* DestBB;
 
+    Edge(BasicBlock* Src, BasicBlock* Dest): SrcBB(Src), DestBB(Dest) {}
+
+    bool operator<(const Edge& other) const {
+      if (SrcBB<other.SrcBB)
+        return true;
+      else if (SrcBB==other.SrcBB)
+        return DestBB<other.DestBB;
+      else
+        return false;
+    }
+  };
+
+private:
+  std::set<BasicBlock*> visited;
+
+  std::set<Edge> AllEdges;
+  std::set<Edge> STEdges;
+
+  Function* F;
+
+  void findSTEdgesDFS(BasicBlock* Cur) {
+    visited.insert(Cur);
+    for (auto Succ: successors(Cur)) {
+      if (visited.find(Succ) == visited.end()) {
+        Edge E(Cur, Succ);
+        STEdges.insert(E);
+        findSTEdgesDFS(Succ);
+      }
+    }
+  }
+
+  void findAllEdges() {
+    AllEdges.clear();
+    for (auto& It: *F) {
+      auto BB = &It;
+      for (auto Succ: successors(BB)) {
+        Edge E(BB, Succ);
+        AllEdges.insert(E);
+      }
+    }
+  }
+
+  // Apply DFS from Entry BB
+  void findSTEdges() {
+    visited.clear();
+    STEdges.clear();
+    auto& Entry = F->getEntryBlock();
+    findSTEdgesDFS(&Entry);
+  }
+
+public:
+  std::set<Edge> getAllNSTEdges() {
+    return move(set_difference(AllEdges, STEdges));
+  }
+
+  explicit ProbeCFGST(Function* Func): F(Func) {
+    findAllEdges();
+    findSTEdges();
+  }
 };
 
 class ProbeSelectorBase {
@@ -32,11 +94,31 @@ protected:
   Function* F;
 };
 
-class ProbeSelectorMST: ProbeSelectorBase {
+class ProbeSelectorST: ProbeSelectorBase {
 public:
-  ProbeSelectorMST(Function* Func): ProbeSelectorBase(Func) {}
-  void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) override {}
-  void resolveBBWeights() override {}
+  explicit ProbeSelectorST(Function* Func): ProbeSelectorBase(Func) {}
+
+  void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) override {
+    ProbeCFGST ST(F);
+    for (ProbeCFGST::Edge E: ST.getAllNSTEdges()) {
+      if (E.SrcBB->getSingleSuccessor()) {
+        InstrumentBBs.insert(E.SrcBB);
+      } else if (E.DestBB->getSinglePredecessor()) {
+        InstrumentBBs.insert(E.DestBB);
+      } else {
+        // for critical edge, we probe both BBs, for that we cannot split the
+        // edge to insert a pseudo probe.
+        InstrumentBBs.insert(E.SrcBB);
+        InstrumentBBs.insert(E.DestBB);
+      }
+    }
+    // we assume the 0 BB connecting to exit BB is in ST, so 0 BB connecting to entry BB is not
+    InstrumentBBs.insert(&F->getEntryBlock());
+  }
+
+  void resolveBBWeights() override {
+    // TODO
+  }
 };
 
 };
