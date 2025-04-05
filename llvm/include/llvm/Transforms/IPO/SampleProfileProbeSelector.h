@@ -85,7 +85,6 @@ class ProbeCFGRecover {
     BasicBlock* BB;
     std::list<ProbeEdge*> Edges; // InEdges at front, OutEdges at back
     size_t InEdgesCount;
-    uint64_t Weight;
 
     BBInfo(BasicBlock* BB);
 
@@ -95,6 +94,7 @@ class ProbeCFGRecover {
     // assume there is unique edge of this block whose weight is unknown,
     // evaluate it and assign estimated block weight.
     ProbeEdge* evaluateUniqueEdgeWeight();
+    uint64_t evaluateWeight();
 
     bool operator<(const BBInfo& other) const;
   };
@@ -121,7 +121,7 @@ public:
 
 class ProbeSelectorBase {
 public:
-  ProbeSelectorBase(Function* Func): F(Func) {}
+  ProbeSelectorBase(Function* Func);
   virtual void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) = 0;
   virtual void resolveBBWeights(DenseMap<const BasicBlock*, uint64_t>& BlockWeights) = 0;
 protected:
@@ -130,7 +130,7 @@ protected:
 
 class ProbeSelectorST: ProbeSelectorBase {
 public:
-  explicit ProbeSelectorST(Function* Func): ProbeSelectorBase(Func) {}
+  explicit ProbeSelectorST(Function* Func);
   void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) override;
   void resolveBBWeights(DenseMap<const BasicBlock*, uint64_t>& BlockWeights) override;
 };

@@ -123,7 +123,7 @@ ProbeCFGST::ProbeCFGST(Function* Func): F(Func), BBIL(Func), isComplex(false) {
   findAllEdges();
 }
 
-ProbeCFGRecover::BBInfo::BBInfo(BasicBlock* BB): BB(BB), InEdgesCount(0), Weight(0) {}
+ProbeCFGRecover::BBInfo::BBInfo(BasicBlock* BB): BB(BB), InEdgesCount(0) {}
 
 void ProbeCFGRecover::BBInfo::insertEdge(ProbeEdge* E) {
   assert(E->SrcBB == BB || E->DestBB == BB);
@@ -144,26 +144,38 @@ unsigned ProbeCFGRecover::BBInfo::getDegree() const {
   return Degree;
 }
 
-ProbeEdge* ProbeCFGRecover::BBInfo::evaluateUniqueEdgeWeight() {
-  ProbeEdge* NoWeightEdge = nullptr;
+ProbeEdge *ProbeCFGRecover::BBInfo::evaluateUniqueEdgeWeight() {
+  ProbeEdge *NoWeightEdge = nullptr;
   uint64_t InWeight = 0, OutWeight = 0;
-  for (auto& E: Edges) {
+  for (auto E : Edges) {
     if (E->Weight == UINT64_MAX) {
-      assert(NoWeightEdge!=nullptr);
+      assert(NoWeightEdge == nullptr);
       NoWeightEdge = E;
     } else {
       if (E->SrcBB == BB)
-        OutWeight+=E->Weight;
+        OutWeight += E->Weight;
       else
-        InWeight+=E->Weight;
+        InWeight += E->Weight;
     }
   }
   if (NoWeightEdge->SrcBB == BB)
-    NoWeightEdge->Weight = OutWeight<InWeight?InWeight-OutWeight:0;
+    NoWeightEdge->Weight = OutWeight < InWeight ? InWeight - OutWeight : 0;
   else
-    NoWeightEdge->Weight = OutWeight>InWeight?OutWeight-InWeight:0;
-  Weight = (OutWeight+InWeight)/2;
+    NoWeightEdge->Weight = OutWeight > InWeight ? OutWeight - InWeight : 0;
   return NoWeightEdge;
+}
+
+uint64_t ProbeCFGRecover::BBInfo::evaluateWeight() {
+  uint64_t InWeight = 0, OutWeight = 0;
+  unsigned Steps = 0;
+  for (auto E: Edges) {
+    assert(E->Weight!=UINT64_MAX);
+    if (Steps++<InEdgesCount)
+      InWeight+=E->Weight;
+    else
+      OutWeight+=E->Weight;
+  }
+  return (InWeight+OutWeight)/2;
 }
 
 bool ProbeCFGRecover::BBInfo::operator<(const BBInfo& other) const {
@@ -226,10 +238,11 @@ bool ProbeCFGRecover::propagateWeights(std::map<const BasicBlock*, uint64_t>& Bl
     auto BB = It->first;
     auto& Info = It->second;
     if (Info.getDegree() == 0) {
+      BlockWeights.insert_or_assign(BB, Info.evaluateWeight());
       BB2Info.erase(It);
     } else if (Info.getDegree() == 1) {
       ProbeEdge* EvaluatedEdge = Info.evaluateUniqueEdgeWeight();
-      BlockWeights.insert_or_assign(BB, Info.Weight); // update map
+      BlockWeights.insert_or_assign(BB, Info.evaluateWeight()); // update map
       BB2Info.erase(It);
       if (EvaluatedEdge->SrcBB == BB)
         reassignBB(EvaluatedEdge->DestBB);
@@ -254,6 +267,9 @@ ProbeCFGRecover::~ProbeCFGRecover() {
     delete E;
   }
 }
+
+ProbeSelectorBase::ProbeSelectorBase(Function* Func): F(Func) {}
+ProbeSelectorST::ProbeSelectorST(Function* Func): ProbeSelectorBase(Func) {}
 
 void ProbeSelectorST::getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) {
   ProbeCFGST SpanningTree(F);
