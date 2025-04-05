@@ -199,11 +199,6 @@ static cl::opt<bool> DisableSampleLoaderInlining(
         "pass, and merge (or scale) profiles (as configured by "
         "--sample-profile-merge-inlinee)."));
 
-static cl::opt<bool>
-    UseSelectivePseudoProbeInference(
-      "use-selective-pseudo-probe-inference", cl::init(false), cl::Hidden,
-      cl::desc("Use selective pseudo probe inference"));
-
 namespace llvm {
 cl::opt<bool>
     SortProfiledSCC("sort-profiled-scc-member", cl::init(true), cl::Hidden,
@@ -344,6 +339,7 @@ static cl::opt<bool> AnnotateSampleProfileInlinePhase(
 
 namespace llvm {
 extern cl::opt<bool> EnableExtTspBlockPlacement;
+extern cl::opt<std::string> UseSelectivePseudoProbe;
 }
 
 namespace {
@@ -1829,7 +1825,7 @@ bool SampleProfileLoader::emitAnnotations(Function &F) {
   InlinedChanged |= computeBlockWeights(F);
 
   if (InlinedChanged) {
-    if (UseSelectivePseudoProbeInference) {
+    if (UseSelectivePseudoProbe == "spanning-tree") {
       ProbeSelectorST Recover(&F);
       Recover.resolveBBWeights(BlockWeights);
     }

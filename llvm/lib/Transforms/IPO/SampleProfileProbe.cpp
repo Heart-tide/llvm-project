@@ -52,9 +52,10 @@ static cl::opt<bool>
     UpdatePseudoProbe("update-pseudo-probe", cl::init(true), cl::Hidden,
                       cl::desc("Update pseudo probe distribution factor"));
 
-static cl::opt<bool>
-    UseSelectivePseudoProbe("use-selective-pseudo-probe", cl::init(false), cl::Hidden,
+namespace llvm {
+cl::opt<std::string> UseSelectivePseudoProbe("use-selective-pseudo-probe", cl::init("none"), cl::Hidden,
                       cl::desc("Use selective pseudo probe"));
+};
 
 static uint64_t getCallStackHash(const DILocation *DIL) {
   uint64_t Hash = 0;
@@ -214,7 +215,7 @@ void SampleProfileProber::computeBlocksToIgnore(
   // callsites.
   findInvokeNormalDests(BlocksToIgnore);
 
-  if (UseSelectivePseudoProbe)
+  if (UseSelectivePseudoProbe == "spanning-tree")
     calculateSelectiveProbeIgnoreIds(BlocksToIgnore);
 }
 
