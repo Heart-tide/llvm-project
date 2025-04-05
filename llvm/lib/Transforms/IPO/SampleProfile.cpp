@@ -22,6 +22,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/IPO/SampleProfile.h"
+#include "llvm/Transforms/IPO/SampleProfileProbeSelector.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -197,6 +198,11 @@ static cl::opt<bool> DisableSampleLoaderInlining(
         "If true, artificially skip inline transformation in sample-loader "
         "pass, and merge (or scale) profiles (as configured by "
         "--sample-profile-merge-inlinee)."));
+
+static cl::opt<bool>
+    UseSelectivePseudoProbeInference(
+      "use-selective-pseudo-probe-inference", cl::init(false), cl::Hidden,
+      cl::desc("Use selective pseudo probe inference"));
 
 namespace llvm {
 cl::opt<bool>
@@ -1817,7 +1823,29 @@ bool SampleProfileLoader::emitAnnotations(Function &F) {
   else
     Changed |= inlineHotFunctions(F, InlinedGUIDs);
 
-  Changed |= computeAndPropagateWeights(F, InlinedGUIDs);
+  // inlined part from SampleProfileLoaderBaseImpl<BT>::computeAndPropagateWeights
+  bool InlinedChanged = (InlinedGUIDs.size() != 0);
+
+  InlinedChanged |= computeBlockWeights(F);
+
+  if (InlinedChanged) {
+    if (UseSelectivePseudoProbeInference) {
+      ProbeSelectorST Recover(&F);
+      Recover.resolveBBWeights(BlockWeights);
+    }
+
+    // Initialize propagation.
+    initWeightPropagation(F, InlinedGUIDs);
+
+    // Propagate weights to all edges.
+    propagateWeights(F);
+
+    // Post-process propagated weights.
+    finalizeWeightPropagation(F, InlinedGUIDs);
+  }
+
+  Changed |= InlinedChanged;
+  // end of inlined part
 
   if (Changed)
     generateMDProfMetadata(F);
