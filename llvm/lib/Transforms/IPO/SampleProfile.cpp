@@ -1826,7 +1826,7 @@ bool SampleProfileLoader::emitAnnotations(Function &F) {
 
   if (InlinedChanged) {
     if (UseSelectivePseudoProbe == "spanning-tree") {
-      ProbeSelectorST Recover(&F);
+      ProbeSelectorSpanningTree Recover(&F);
       Recover.resolveBBWeights(BlockWeights);
     }
 

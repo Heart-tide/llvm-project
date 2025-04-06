@@ -7,6 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/IPO/SampleProfileProbeSelector.h"
+#include "llvm/Analysis/PostDominators.h"
+#include "llvm/IR/InstrTypes.h"
 
 namespace llvm {
 
@@ -25,68 +27,16 @@ bool ProbeEdge::operator<(const ProbeEdge& other) const {
     return false;
 }
 
-ProbeCFGST::BBInfoList::BBInfo::BBInfo(BasicBlock* BB): BB(BB), Parent(nullptr) {}
-
-auto ProbeCFGST::BBInfoList::getRoot(BBInfo* BBI) -> BBInfo* {
-  auto P = BBI;
-  while (P->Parent!=nullptr)
-    P=P->Parent;
-  return P;
-}
-
-auto ProbeCFGST::BBInfoList::getBBInfo(BasicBlock* BB) -> BBInfo* {
-  auto It = BB2Info.find(BB);
-  return &It->second;
-}
-
-ProbeCFGST::BBInfoList::BBInfoList(Function* Func) {
-  for (auto& BB:*Func) {
-    BB2Info.insert(std::make_pair(&BB, BBInfo(&BB)));
-  }
-}
-
-// union two group, assuming they are not unioned.
-void ProbeCFGST::BBInfoList::unionGroup(BasicBlock* BB1, BasicBlock* BB2) {
-  auto BBI1=getBBInfo(BB1), BBI2 = getBBInfo(BB2);
-  if (BBI1->Parent==nullptr) {
-    BBI1->Parent=BBI2;
-  } else if (BBI2->Parent==nullptr){
-    BBI2->Parent=BBI1;
-  } else {
-    auto BBI1Root = getRoot(BBI1);
-    BBI1Root->Parent = BBI2;
-  }
-}
-
-bool ProbeCFGST::BBInfoList::hasUnioned(BasicBlock* BB1, BasicBlock* BB2) {
-  auto BBI1=getBBInfo(BB1), BBI2 = getBBInfo(BB2);
-  auto BBI1Root = getRoot(BBI1);
-  auto BBI2Root = getRoot(BBI2);
-  return BBI1Root == BBI2Root;
-}
-
-bool ProbeCFGST::BBInfoList::checkAllUnioned() {
-  int NoParentBBICount = 0;
-  for (auto& I: BB2Info) {
-    auto& BBI = I.second;
-    if (BBI.Parent == nullptr) {
-      if (++NoParentBBICount == 2) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-void ProbeCFGST::findAllEdges() {
-  for (auto& BB: *F) {
-    for (auto Succ: successors(&BB)) {
+void ProbeCFGSpanningTree::findAllEdges() {
+  for (auto &BB : *F) {
+    EC.insert(&BB);
+    for (auto Succ : successors(&BB)) {
       if (!BB.getSingleSuccessor() && !Succ->getSinglePredecessor()) {
         AllEdges.insert(std::make_unique<ProbeEdge>(&BB, Succ, true));
-        if (BBIL.hasUnioned(&BB, Succ)) {
-          isComplex=true;
+        if (EC.isEquivalent(&BB, Succ)) {
+          isComplex = true;
         } else {
-          BBIL.unionGroup(&BB, Succ);
+          EC.unionSets(&BB, Succ);
         }
       } else {
         AllEdges.insert(std::make_unique<ProbeEdge>(&BB, Succ, false));
@@ -95,7 +45,7 @@ void ProbeCFGST::findAllEdges() {
   }
 }
 
-std::set<ProbeEdge> ProbeCFGST::getAllNSTEdges() {
+std::set<ProbeEdge> ProbeCFGSpanningTree::getAllNSTEdges() {
   std::set<ProbeEdge> NST;
   for (auto& E: AllEdges) {
     if (!E->inSpanningTree) {
@@ -105,21 +55,22 @@ std::set<ProbeEdge> ProbeCFGST::getAllNSTEdges() {
   return NST;
 }
 
-bool ProbeCFGST::markSTEdges() {
-  if(isComplex) {
+bool ProbeCFGSpanningTree::markSTEdges() {
+  if (isComplex) {
     return false;
   }
   for (auto& E: AllEdges) {
     auto SrcBB = E->SrcBB, DestBB = E->DestBB;
-    if (!BBIL.hasUnioned(SrcBB, DestBB)) {
-      BBIL.unionGroup(SrcBB, DestBB);
+    if (!EC.isEquivalent(SrcBB, DestBB)) {
+      EC.unionSets(SrcBB, DestBB);
       E->inSpanningTree = true;
     }
   }
-  return BBIL.checkAllUnioned();
+  // check all BBs are in spanning tree
+  return EC.getNumClasses() == 1;
 }
 
-ProbeCFGST::ProbeCFGST(Function* Func): F(Func), BBIL(Func), isComplex(false) {
+ProbeCFGSpanningTree::ProbeCFGSpanningTree(Function* Func): F(Func), isComplex(false) {
   findAllEdges();
 }
 
@@ -269,10 +220,10 @@ ProbeCFGRecover::~ProbeCFGRecover() {
 }
 
 ProbeSelectorBase::ProbeSelectorBase(Function* Func): F(Func) {}
-ProbeSelectorST::ProbeSelectorST(Function* Func): ProbeSelectorBase(Func) {}
+ProbeSelectorSpanningTree::ProbeSelectorSpanningTree(Function* Func): ProbeSelectorBase(Func) {}
 
-void ProbeSelectorST::getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) {
-  ProbeCFGST SpanningTree(F);
+void ProbeSelectorSpanningTree::getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) {
+  ProbeCFGSpanningTree SpanningTree(F);
   assert(SpanningTree.markSTEdges()); // TODO: fix interface
   for (auto& E: SpanningTree.getAllNSTEdges()) {
     if (E.SrcBB->getSingleSuccessor()) {
@@ -282,7 +233,7 @@ void ProbeSelectorST::getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) {
     } else {
       // for critical edge, we probe both BBs, for that we cannot split the
       // edge to insert a pseudo probe.
-      errs() << "cannot make selective probe when function has critical edge which is not in ST";
+      errs() << "cannot make selective probe when function has critical edge which is not in spanning tree";
       exit(1);
     }
   }
@@ -290,18 +241,77 @@ void ProbeSelectorST::getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) {
   InstrumentBBs.insert(&F->getEntryBlock());
 }
 
-void ProbeSelectorST::resolveBBWeights(DenseMap<const BasicBlock*, uint64_t>& BlockWeights) {
+void ProbeSelectorSpanningTree::resolveBBWeights(
+    DenseMap<const BasicBlock *, uint64_t> &BlockWeights) {
   if (BlockWeights.size() == F->size())
     return;
   ProbeCFGRecover Recover(F);
-  std::map<const BasicBlock*, uint64_t> NewMap;
-  for (auto& It: BlockWeights) {
+  std::map<const BasicBlock *, uint64_t> NewMap;
+  for (auto &It : BlockWeights) {
     NewMap.insert(std::make_pair(It.getFirst(), It.getSecond()));
   }
   Recover.markEdgesWeight(NewMap);
   assert(Recover.propagateWeights(NewMap)); // TODO: fix interface
-  for (auto& It: NewMap) {
+  for (auto &It : NewMap) {
     BlockWeights.insert_or_assign(It.first, It.second);
+  }
+}
+
+ProbeSelectorCallSite::ProbeSelectorCallSite(Function *Func):
+  ProbeSelectorBase(Func) {}
+
+void ProbeSelectorCallSite::getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) {
+  for (auto& BB: *F) {
+    for (auto& Inst: BB) {
+      if (!dyn_cast<CallBase>(&Inst)) {
+        InstrumentBBs.insert(&BB);
+      }
+    }
+  }
+}
+
+void ProbeSelectorCallSite::resolveBBWeights(
+    DenseMap<const BasicBlock *, uint64_t> &BlockWeights) {}
+
+ProbeSelectorEquivalentBBs::ProbeSelectorEquivalentBBs(Function *Func):
+  ProbeSelectorBase(Func) {
+  DominatorTree ForwardDomTree;
+  PostDominatorTree PostDomTree;
+  for (auto& BB1: *F) {
+    EC.insert(&BB1);
+    SmallVector<BasicBlock*> Descendants;
+    ForwardDomTree.getDescendants(&BB1, Descendants);
+    for (auto BB2: Descendants) {
+      if (PostDomTree.dominates(BB2, &BB1)) {
+        EC.unionSets(&BB1, BB2);
+      }
+    }
+  }
+}
+
+void ProbeSelectorEquivalentBBs::getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) {
+  for (auto& I: EC) {
+    if (!I.isLeader())
+      continue;
+    InstrumentBBs.insert(I.getData());
+  }
+}
+
+void ProbeSelectorEquivalentBBs::resolveBBWeights(
+    DenseMap<const BasicBlock *, uint64_t> &BlockWeights) {
+  for (auto& I: EC) {
+    if (!I.isLeader())
+      continue;
+    uint64_t MaxWeightInEC = 0;
+    for (auto Member = EC.member_begin(I); Member != EC.member_end(); Member++) {
+      auto It = BlockWeights.find(*Member);
+      if (It != BlockWeights.end()) {
+        MaxWeightInEC = std::max(MaxWeightInEC, It->getSecond());
+      }
+    }
+    for (auto Member = EC.member_begin(I); Member != EC.member_end(); Member++) {
+        BlockWeights.insert_or_assign(*Member, MaxWeightInEC);
+    }
   }
 }
 

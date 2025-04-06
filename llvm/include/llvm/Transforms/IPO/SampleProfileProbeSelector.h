@@ -14,9 +14,10 @@
 #ifndef SAMPLEPROFILEPROBESELECTOR_H
 #define SAMPLEPROFILEPROBESELECTOR_H
 
+#include "llvm/ADT/EquivalenceClasses.h"
+#include "llvm/ADT/PriorityQueue.h"
 #include "llvm/IR/CFG.h"
 #include <map>
-#include <set>
 #include <list>
 
 namespace llvm {
@@ -24,10 +25,8 @@ namespace llvm {
 struct ProbeEdge {
   BasicBlock* SrcBB;
   BasicBlock* DestBB;
-
   bool inSpanningTree;
   bool isCritical;
-
   uint64_t Weight;
 
   ProbeEdge(BasicBlock* Src, BasicBlock* Dest, bool Critical);
@@ -35,49 +34,18 @@ struct ProbeEdge {
   bool operator<(const ProbeEdge& other) const;
 };
 
-class ProbeCFGST {
-public:
-  class BBInfoList {
-    struct BBInfo {
-      BasicBlock* BB;
-      BBInfo* Parent;
-
-      BBInfo(BasicBlock* BB);
-    };
-
-    std::map<BasicBlock*, BBInfo> BB2Info;
-
-    BBInfo* getRoot(BBInfo* BBI);
-    BBInfo* getBBInfo(BasicBlock* BB);
-
-  public:
-    BBInfoList(Function* Func);
-
-    // union two group, assuming they are not unioned.
-    void unionGroup(BasicBlock* BB1, BasicBlock* BB2);
-
-    bool hasUnioned(BasicBlock* BB1, BasicBlock* BB2);
-    bool checkAllUnioned();
-  };
-
+class ProbeCFGSpanningTree {
 private:
   Function* F;
-
   std::set<std::unique_ptr<ProbeEdge>> AllEdges;
-  BBInfoList BBIL;
-
+  EquivalenceClasses<BasicBlock*> EC;
   void findAllEdges();
 
 public:
-  // the function has edges that can form a circle
-  bool isComplex;
-
+  bool isComplex; // the function has edges that can form a circle
   std::set<ProbeEdge> getAllNSTEdges();
-
-  // return true if success, otherwise return false
-  bool markSTEdges();
-
-  explicit ProbeCFGST(Function* Func);
+  bool markSTEdges();  // return true if success, otherwise return false
+  explicit ProbeCFGSpanningTree(Function* Func);
 };
 
 class ProbeCFGRecover {
@@ -121,18 +89,34 @@ public:
 
 class ProbeSelectorBase {
 public:
-  ProbeSelectorBase(Function* Func);
+  explicit ProbeSelectorBase(Function* Func);
   virtual void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) = 0;
   virtual void resolveBBWeights(DenseMap<const BasicBlock*, uint64_t>& BlockWeights) = 0;
 protected:
   Function* F;
 };
 
-class ProbeSelectorST: ProbeSelectorBase {
+class ProbeSelectorSpanningTree: ProbeSelectorBase {
 public:
-  explicit ProbeSelectorST(Function* Func);
+  explicit ProbeSelectorSpanningTree(Function* Func);
   void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) override;
   void resolveBBWeights(DenseMap<const BasicBlock*, uint64_t>& BlockWeights) override;
+};
+
+class ProbeSelectorCallSite: ProbeSelectorBase {
+public:
+  explicit ProbeSelectorCallSite(Function* Func);
+  void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) override;
+  void resolveBBWeights(DenseMap<const BasicBlock*, uint64_t>& BlockWeights) override;
+};
+
+class ProbeSelectorEquivalentBBs : ProbeSelectorBase {
+private:
+  EquivalenceClasses<BasicBlock*> EC;
+public:
+  explicit ProbeSelectorEquivalentBBs(Function *Func);
+  void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) override;
+  void resolveBBWeights(DenseMap<const BasicBlock *, uint64_t> &BlockWeights) override;
 };
 
 };
