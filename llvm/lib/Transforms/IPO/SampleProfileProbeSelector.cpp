@@ -315,4 +315,4 @@ void ProbeSelectorEquivalentBBs::resolveBBWeights(
   }
 }
 
-};
+}

@@ -92,6 +92,7 @@ public:
   explicit ProbeSelectorBase(Function* Func);
   virtual void getProbeBBs(DenseSet<BasicBlock *> &InstrumentBBs) = 0;
   virtual void resolveBBWeights(DenseMap<const BasicBlock*, uint64_t>& BlockWeights) = 0;
+  virtual ~ProbeSelectorBase() = default;
 protected:
   Function* F;
 };
@@ -119,6 +120,6 @@ public:
   void resolveBBWeights(DenseMap<const BasicBlock *, uint64_t> &BlockWeights) override;
 };
 
-};
+}
 
 #endif //SAMPLEPROFILEPROBESELECTOR_H
