@@ -9,6 +9,7 @@
 #include "llvm/Transforms/IPO/SampleProfileProbeSelector.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/Analysis/LoopInfo.h"
 
 namespace llvm {
 
@@ -277,12 +278,13 @@ ProbeSelectorEquivalentBBs::ProbeSelectorEquivalentBBs(Function *Func):
   ProbeSelectorBase(Func) {
   DominatorTree ForwardDomTree;
   PostDominatorTree PostDomTree;
+  LoopInfo LI(ForwardDomTree);
   for (auto& BB1: *F) {
     EC.insert(&BB1);
     SmallVector<BasicBlock*> Descendants;
     ForwardDomTree.getDescendants(&BB1, Descendants);
     for (auto BB2: Descendants) {
-      if (PostDomTree.dominates(BB2, &BB1)) {
+      if (PostDomTree.dominates(BB2, &BB1) && LI.getLoopDepth(&BB1) == LI.getLoopDepth(BB2)) {
         EC.unionSets(&BB1, BB2);
       }
     }

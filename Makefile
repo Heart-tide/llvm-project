@@ -56,6 +56,7 @@ probed: $(CLANG_PROBED_PATH)
         ninja clang
 
 profile: $(CLANG_USED_PATH) $(PROFILE_PATH)
+	rm -r $</*
 	cd $< && \
         cmake $(CMAKE_COMMON_FLAGS) \
             -DLLVM_BUILD_RUNTIME=No \
@@ -66,16 +67,20 @@ profile: $(CLANG_USED_PATH) $(PROFILE_PATH)
         -g \
         --call-graph fp \
         -e br_inst_retired.near_taken:uppp \
-        -c 16009 \
+        -c 160009 \
         -b \
-        --no-buildid \
         -o $(PROFILE_PATH)/clang.perf.data \
-        -- ninja -C $(CLANG_USED_PATH) clang
+        -- ninja -C $(CLANG_USED_PATH) opt
+	perf script \
+        -F ip,brstack \
+        -i $(PROFILE_PATH)/clang.perf.data \
+        --show-mmap-event \
+        > $(PROFILE_PATH)/clang.perf.script
 	llvm-profgen \
-        --perfdata=$(PROFILE_PATH)/clang.perf.data \
-        --binary=$(CLANG_PROBED_PATH)/bin/clang++ \
+        --perfscript=$(PROFILE_PATH)/clang.perf.script \
+        --binary=$(CLANG_PROBED_PATH)/bin/clang-21 \
         --output=$(PROFILE_PATH)/clang.spgo.prof \
-        --format=extbinary
+        --format=text
 
 optimized: $(CLANG_OPTIMIZED_PATH)
 	cd $< && \

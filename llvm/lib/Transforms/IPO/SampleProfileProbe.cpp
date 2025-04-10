@@ -55,7 +55,7 @@ static cl::opt<bool>
 namespace llvm {
 cl::opt<std::string> UseSelectivePseudoProbe("use-selective-pseudo-probe", cl::init("none"), cl::Hidden,
                       cl::desc("Use selective pseudo probe"));
-};
+}
 
 static uint64_t getCallStackHash(const DILocation *DIL) {
   uint64_t Hash = 0;
