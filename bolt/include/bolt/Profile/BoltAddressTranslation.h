@@ -97,6 +97,10 @@ public:
   uint64_t translate(uint64_t FuncAddress, uint64_t Offset,
                      bool IsBranchSrc) const;
 
+  /// If the maps are loaded in memory, perform the lookup to translate branch
+  /// source address in function located at \p FuncAddress.
+  uint64_t reverseBranchTranslate(uint64_t FuncAddress, uint64_t Offset) const;
+
   /// Use the map keys containing basic block addresses to infer fall-throughs
   /// taken in the path started at FirstLBR.To and ending at SecondLBR.From.
   /// Return std::nullopt if trace is invalid or the list of fall-throughs

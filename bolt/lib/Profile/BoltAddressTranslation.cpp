@@ -511,6 +511,23 @@ uint64_t BoltAddressTranslation::translate(uint64_t FuncAddress,
   return Offset - KeyVal->first + Val;
 }
 
+uint64_t BoltAddressTranslation::reverseBranchTranslate(uint64_t FuncAddress,
+                                           uint64_t Offset) const {
+  auto Iter = Maps.find(FuncAddress);
+  if (Iter == Maps.end())
+    return Offset;
+
+  const MapTy &Map = Iter->second;
+
+  for (auto& Entry: Map) {
+    const uint32_t Val = Entry.second >> 1;
+    if (Offset == Val && (Entry.second & 1) == 1)
+      return Entry.first;
+  }
+
+  assert(0);
+}
+
 std::optional<BoltAddressTranslation::FallthroughListTy>
 BoltAddressTranslation::getFallthroughsInTrace(uint64_t FuncAddress,
                                                uint64_t From,
