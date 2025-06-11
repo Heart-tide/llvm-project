@@ -1,11 +1,7 @@
 // bat-reader.cpp: reader mapping from bat section
 
 #include "bolt/Profile/BoltAddressTranslation.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/Twine.h"
-#include "llvm/Object/Binary.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/Error.h"
 #include "llvm/Object/ObjectFile.h"
@@ -13,39 +9,13 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Errc.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Program.h"
-#include "llvm/Support/raw_ostream.h"
-#include <assert.h>
-#include <cstdint>
-#include <map>
-#include <stdlib.h>
-#include <string>
-#include <system_error>
-#include <type_traits>
-#include <utility>
 
 using namespace llvm;
 using namespace bolt;
 
-namespace opts {
-
-static cl::OptionCategory BatReaderCategory("BAT reader options");
-
-static cl::OptionCategory *BatReaderCategories[] = {&BatReaderCategory};
-
-static cl::opt<std::string> InputFilename(cl::Positional,
-                                          cl::desc("<executable>"),
-                                          cl::Required,
-                                          cl::cat(BatReaderCategory));
-
-static cl::opt<std::string> TargetAddress("addr", cl::desc("address to be translated"),
-                             cl::cat(BatReaderCategory));
-
-} // namespace opts
+static BoltAddressTranslation BAT;
+static std::map<uint64_t, std::string> FunctionsMap;
 
 static void report_error(StringRef Message, std::error_code EC) {
   assert(EC);
@@ -60,8 +30,24 @@ static void report_error(StringRef Message, Error E) {
   exit(1);
 }
 
-void dumpBATFor(llvm::object::ELFObjectFileBase *InputFile, uint64_t Address) {
-  BoltAddressTranslation BAT;
+uint64_t dumpBATFor(uint64_t Address) {
+  // dbgs() << "Translating addresses according to parsed BAT tables:\n";
+  auto FI = FunctionsMap.upper_bound(Address);
+  if (FI == FunctionsMap.begin()) {
+    errs() << "No function symbol found for 0x" << Twine::utohexstr(Address)
+           << "\n";
+  }
+  --FI;
+
+  uint64_t prevOffset = BAT.reverseBranchTranslate(FI->first, Address - FI->first);
+  // dbgs() << "0x" << Twine::utohexstr(Address) << " -> "
+  //        << "0x" << Twine::utohexstr(FI->first + prevOffset)
+  //        << " (aka. " << FI->second << " + 0x" << Twine::utohexstr(prevOffset) << ")"
+  //        << "\n";
+  return FI->first + prevOffset;
+}
+
+static void initBAT(llvm::object::ELFObjectFileBase *InputFile) {
   if (!BAT.enabledFor(InputFile)) {
     errs() << "error: no BAT table found.\n";
     exit(1);
@@ -99,7 +85,6 @@ void dumpBATFor(llvm::object::ELFObjectFileBase *InputFile, uint64_t Address) {
 
   // Build map of <Address, SymbolName> for InputFile
   // 在不开启函数重排的情况下，可以用优化后的函数入口表来代替优化前的表
-  std::map<uint64_t, StringRef> FunctionsMap;
   for (const llvm::object::ELFSymbolRef &Symbol : InputFile->symbols()) {
     Expected<StringRef> NameOrError = Symbol.getName();
     if (NameOrError.takeError())
@@ -108,43 +93,24 @@ void dumpBATFor(llvm::object::ELFObjectFileBase *InputFile, uint64_t Address) {
       continue;
     const StringRef Name = *NameOrError;
     const uint64_t FuncAddress = cantFail(Symbol.getAddress());
-    FunctionsMap[FuncAddress] = Name;
+    FunctionsMap[FuncAddress] = Name.str();
   }
-
-  outs() << "Translating addresses according to parsed BAT tables:\n";
-  auto FI = FunctionsMap.upper_bound(Address);
-  if (FI == FunctionsMap.begin()) {
-    outs() << "No function symbol found for 0x" << Twine::utohexstr(Address)
-           << "\n";
-  }
-  --FI;
-
-  uint64_t prevOffset = BAT.reverseBranchTranslate(FI->first, Address - FI->first);
-  outs() << "0x" << Twine::utohexstr(Address) << " -> "
-         << "0x" << Twine::utohexstr(FI->first + prevOffset)
-         << " (aka. " << FI->second << " + 0x" << Twine::utohexstr(prevOffset) << ")"
-         << "\n";
 }
 
-int main(int argc, char **argv) {
-  cl::HideUnrelatedOptions(ArrayRef(opts::BatReaderCategories));
-  cl::ParseCommandLineOptions(argc, argv, "");
-
-  if (!sys::fs::exists(opts::InputFilename))
-    report_error(opts::InputFilename, errc::no_such_file_or_directory);
+int initBATReader(std::string InputFilename) {
+  if (!sys::fs::exists(InputFilename))
+    report_error(InputFilename, errc::no_such_file_or_directory);
 
   Expected<llvm::object::OwningBinary<llvm::object::Binary>> BinaryOrErr =
-      llvm::object::createBinary(opts::InputFilename);
+      llvm::object::createBinary(InputFilename);
   if (Error E = BinaryOrErr.takeError())
-    report_error(opts::InputFilename, std::move(E));
+    report_error(InputFilename, std::move(E));
   llvm::object::Binary &Binary = *BinaryOrErr.get().getBinary();
 
-  uint64_t TargetAddressInteger = strtoul(opts::TargetAddress.c_str(), NULL, 16);
-
   if (auto *InputFile = dyn_cast<llvm::object::ELFObjectFileBase>(&Binary))
-    dumpBATFor(InputFile, TargetAddressInteger);
+    initBAT(InputFile);
   else
-    report_error(opts::InputFilename,
+    report_error(InputFilename,
                  llvm::object::object_error::invalid_file_type);
 
   return EXIT_SUCCESS;
