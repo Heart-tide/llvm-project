@@ -1,10 +1,20 @@
-llvm_add_library(llvm-bat-reader
-        bat-reader.cpp
-        MODULE
+set(LLVM_LINK_COMPONENTS
+        Object
+        Support
+)
+
+add_llvm_library(LLVMBATReader STATIC
+        source/bat-reader.cpp
         DISABLE_LLVM_LINK_LLVM_DYLIB
   )
 
-target_link_libraries(llvm-bat-reader
-        PRIVATE
-        LLVMBOLTProfile
-  )
+target_include_directories(LLVMBATReader
+        PUBLIC header
+)
+
+target_link_libraries(LLVMBATReader
+        PRIVATE LLVMBOLTProfile
+        --static
+)
+
+add_subdirectory(testcase)

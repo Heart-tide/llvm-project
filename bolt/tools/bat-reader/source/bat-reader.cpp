@@ -1,7 +1,11 @@
 // bat-reader.cpp: reader mapping from bat section
 
 #include "bolt/Profile/BoltAddressTranslation.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Object/Binary.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/Error.h"
 #include "llvm/Object/ObjectFile.h"
@@ -9,7 +13,22 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Errc.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Program.h"
+#include "llvm/Support/raw_ostream.h"
+#include <assert.h>
+#include <cstdint>
+#include <map>
+#include <stdlib.h>
+#include <string>
+#include <system_error>
+#include <type_traits>
+#include <utility>
+
+namespace bat_reader {
 
 using namespace llvm;
 using namespace bolt;
@@ -114,4 +133,6 @@ int initBATReader(std::string InputFilename) {
                  llvm::object::object_error::invalid_file_type);
 
   return EXIT_SUCCESS;
+}
+
 }
