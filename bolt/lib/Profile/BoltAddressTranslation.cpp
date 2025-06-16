@@ -521,10 +521,12 @@ uint64_t BoltAddressTranslation::reverseBranchTranslate(uint64_t FuncAddress,
 
   for (auto& Entry: Map) {
     const uint32_t Val = Entry.second >> 1;
-    if (Offset == Val && (Entry.second & 1) == 1)
+    if (Offset == Val)
       return Entry.first;
   }
 
+  errs() << "reverseBranchTranslate: FuncAddress = " << utohexstr(FuncAddress)
+          << ", Offset = " << utohexstr(Offset) << "\n";
   assert(0);
 }
 
