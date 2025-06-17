@@ -513,21 +513,33 @@ uint64_t BoltAddressTranslation::translate(uint64_t FuncAddress,
 
 uint64_t BoltAddressTranslation::reverseBranchTranslate(uint64_t FuncAddress,
                                            uint64_t Offset) const {
+  // 获取函数内映射表
   auto Iter = Maps.find(FuncAddress);
   if (Iter == Maps.end())
     return Offset;
-
   const MapTy &Map = Iter->second;
 
+  // 在函数内查找对应于当前指令的基本块映射
+  uint32_t LowerBound = 0;
+  unsigned LowerBoundEntry = UINT64_MAX;
   for (auto& Entry: Map) {
     const uint32_t Val = Entry.second >> 1;
-    if (Offset == Val)
-      return Entry.first;
+    if (Offset >= Val) {
+      if (Offset - LowerBound >= Offset - Val) { // 包含等于的情况，因为可能有Offset==0的匹配项
+        LowerBound = Val;
+        LowerBoundEntry = Entry.first;
+      }
+    }
   }
 
-  errs() << "reverseBranchTranslate: FuncAddress = " << utohexstr(FuncAddress)
+  // 输出映射后地址
+  if (LowerBoundEntry != UINT64_MAX) {
+    return Offset - LowerBound + LowerBoundEntry;
+  } else {
+    errs() << "reverseBranchTranslate: No paired BB entry at FuncAddress = " << utohexstr(FuncAddress)
           << ", Offset = " << utohexstr(Offset) << "\n";
-  assert(0);
+    assert(0);
+  }
 }
 
 std::optional<BoltAddressTranslation::FallthroughListTy>
